@@ -1,125 +1,100 @@
 import { useEffect, useRef } from "react";
+
 import ForceGraph3D from "3d-force-graph";
+import * as THREE from "three";
+
+import { parseBracketText } from "./parseBracketText";
+import { applySphereLayout } from "./sphereLayout";
 
 export default function App() {
 
-  const ref = useRef();
+  const graphRef = useRef();
 
   useEffect(() => {
 
-    /*
-    const data = {
+    const text = `
+      自我(认知(短时记忆, 长期记忆, 逻辑推理, 归纳总结, 发散想象, 具象联想, 价值判断, 利弊权衡, 观察力, 洞察力)
+      情绪(喜悦, 狂喜, 温柔, 哀伤, 孤独, 委屈, 愤怒, 烦躁, 惶恐, 焦虑, 松弛平静, 麻木淡漠)
+      行为(口头表达, 文字输出, 肢体沟通, 落地实践, 持续坚持, 拖延懈怠, 自律作息, 消费取舍, 人际妥协, 主动争取, 复盘反思, 盲目冲动)
+      内在需求(生存安全感, 稳定环境, 群体归属感, 被理解, 被尊重, 自我价值认可, 能力成长, 边界自由, 新鲜感探索, 内心安宁)
+      人际维度(直系亲情, 长辈亲缘, 同辈手足, 知心挚友, 泛泛之交, 亲密爱情, 职场同事, 师长前辈, 陌生人社交, 圈层人脉)
+      人生目标(短期生活规划, 年度成长计划, 职业发展路径, 财富物质积累, 健康体魄养护, 精神思想丰盈, 兴趣爱好深耕, 社会价值贡献, 家庭安稳幸福, 自我圆满通透)
+      性格特质(内向内敛, 外向开朗, 敏感细腻, 粗线条豁达, 完美主义, 佛系随缘, 果敢决断, 犹豫多虑, 共情心软, 理性冷感)
+      资源能力(专业技能, 学习悟性, 人脉资源, 时间精力, 金钱储备, 心态抗压, 创意脑洞, 统筹规划, 执行落地, 复盘优化)
+      痛苦障碍(自我否定, 攀比内耗, 害怕失败, 恐惧孤独, 无力改变, 执念放不下, 自卑敏感, 过度讨好, 完美焦虑, 逃避困难))`;
 
-      nodes: [
-        { id: "爱" },
-        { id: "情感" },
-        { id: "行动" },
-        { id: "关系" },
-        { id: "同情" },
-        { id: "帮助" },
-        { id: "牺牲" }
-      ],
+    const {
+      nodes,
+      links,
+      dimensionColorMap
+    } = parseBracketText(text);
 
-      links: [
-        { source: "爱", target: "情感" },
-        { source: "爱", target: "行动" },
-        { source: "爱", target: "关系" },
-        { source: "情感", target: "同情" },
-        { source: "行动", target: "帮助" },
-        { source: "帮助", target: "牺牲" },
-        { source: "同情", target: "牺牲" }
-      ]
-    };
-    
-    */
+    applySphereLayout(nodes);
 
-    // 示例输入文本，实际换成输入框state
-    const text = `爱(你,我(她,他),她)`;
-    const { nodes, links } = parseBracketText(text);
+    const graph =
+      ForceGraph3D()(graphRef.current);
 
-    const data = { nodes, links };
-
-    const radius = 300;
-
-    // 批量把所有节点铺到球面
-    data.nodes.forEach((node, index) => {
-      const phi = Math.acos(-1 + (2 * index) / data.nodes.length);
-      const theta = Math.sqrt(data.nodes.length * Math.PI) * phi;
-      node.x = radius * Math.cos(theta) * Math.sin(phi);
-      node.y = radius * Math.sin(theta) * Math.sin(phi);
-      node.z = radius * Math.cos(phi);
+    graph.graphData({
+      nodes,
+      links
     });
 
 
+    // ✅ 修复
 
-    ForceGraph3D()(ref.current)
-      .graphData(data);
-    //.forceEngine(null); // 禁用自动物理扩散，锁定球面位置
+    graph.nodeVal(node => node.weight * 10);
+
+
+    // ✅ 修复
+
+    graph.nodeThreeObject(node => {
+
+      return new THREE.Mesh(
+        new THREE.SphereGeometry(
+          node.weight * 4,
+          16,
+          16
+        ),
+        new THREE.MeshBasicMaterial({
+          color:
+            dimensionColorMap[node.dimension]
+            || "#cccccc",
+
+          transparent: true,
+
+          opacity: node.hot
+        })
+      );
+    });
+
+    graph.nodeLabel(node => `
+ID: ${node.id}
+Level: ${node.level}
+Dimension: ${node.dimension}
+    `);
+
+    // 固定位置
+
+    nodes.forEach(node => {
+
+      node.fx = node.x;
+      node.fy = node.y;
+      node.fz = node.z;
+    });
+
+    graph.cooldownTicks(0);
+
+    graph.zoomToFit(1000);
 
   }, []);
 
-  return <div ref={ref} style={{ width: "100vw", height: "100vh" }} />;
-}
-
-/**
- * 解析括号层级文本，输出 {nodes, links}
- * @param {string} text 带括号层级文本
- * @returns {{nodes:Array, links:Array}}
- */
-function parseBracketText(text) {
-  // 1. 清理空白
-  const cleanStr = text.replace(/\s+/g, "");
-  // 2. 同时分割 ( ) , 三种符号
-  const rawTokens = cleanStr.split(/([(),])/);
-  // 过滤空字符串+去首尾空格
-  let tokens = rawTokens.map(s => s.trim()).filter(s => s !== "");
-
-  const nodes = [];
-  const links = [];
-  const stack = [];
-  const nodeIdSet = new Set();
-  // 标记：下一个文字是否需要压栈（只有(后面的节点才会成为父容器）
-  let needPushNextNode = false;
-
-  for (const token of tokens) {
-    if (token === "(") {
-      needPushNextNode = true;
-      continue;
-    }
-    if (token === ")") {
-      stack.pop();
-      needPushNextNode = false;
-      continue;
-    }
-    if (token === ",") {
-      // 逗号仅分隔，无逻辑
-      continue;
-    }
-
-    // 普通文字节点
-    const nodeId = token;
-    if (!nodeIdSet.has(nodeId)) {
-      nodeIdSet.add(nodeId);
-
-      //新增
-
-
-      nodes.push({ id: nodeId });
-    }
-
-    // 栈存在父级，创建父子连线
-    if (stack.length > 0) {
-      const parentId = stack.at(-1);
-      links.push({ source: parentId, target: nodeId });
-    }
-
-    // 仅左括号后的节点才压栈，作为后续子节点的父
-    if (needPushNextNode) {
-      stack.push(nodeId);
-      needPushNextNode = false;
-    }
-    // 普通同级节点不压栈，不会形成链式嵌套
-  }
-
-  return { nodes, links };
+  return (
+    <div
+      ref={graphRef}
+      style={{
+        width: "100vw",
+        height: "100vh"
+      }}
+    />
+  );
 }
